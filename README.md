@@ -75,8 +75,9 @@ Deploy from GitHub:
 3. Select `riz7861/local-imdb-browser` and deploy the app service.
 4. Add a Railway volume to the app service and mount it at `/data`.
 5. In the Railway service variables, set `SECRET_KEY` to a long random value and set `DATABASE_PATH=/data/imdb.db`. Optional fetcher variables such as `OMDB_API_KEY` and `TMDB_API_KEY` can also be set there.
-6. Create or restore the production SQLite database separately. The repository does not include `imdb.db`, and Railway's ephemeral app filesystem should not be used for the production database.
-7. Run the setup/import command against the mounted volume path, for example from a Railway shell or one-off command:
+6. Create, restore, or bootstrap the production SQLite database separately. The repository does not include `imdb.db`, and Railway's ephemeral app filesystem should not be used for the production database.
+7. If you already have a prebuilt database hosted at a private download URL, set `DATABASE_DOWNLOAD_URL` to that URL. On startup, the app checks `DATABASE_PATH`; if `/data/imdb.db` is missing, it streams the download to a temporary file in `/data` and moves it into place when complete. Existing databases are left untouched, so the download only runs once per empty volume.
+8. If you are importing directly on Railway instead, run the setup/import command against the mounted volume path, for example from a Railway shell or one-off command:
 
 ```bash
 python setup_imdb.py --db /data/imdb.db --with-akas
@@ -88,9 +89,10 @@ The scripts also read `DATABASE_PATH`, so this is equivalent when the Railway va
 python setup_imdb.py --with-akas
 ```
 
-8. Open the service logs to confirm Gunicorn started, then use Networking > Public Networking > Generate Domain to expose the app.
+9. Open the service logs to confirm Gunicorn started. Bootstrap progress and any readable download errors are written to the logs.
+10. Use Networking > Public Networking > Generate Domain to expose the app.
 
-Startup note: production data must exist before useful browsing. The app can start without `imdb.db` and show the setup-needed page, but Railway deployment does not build or restore the IMDb database automatically.
+Startup note: production data must exist before useful browsing. The app can start without `imdb.db` and show the setup-needed page. If `DATABASE_DOWNLOAD_URL` is set and the download fails, the partial file is removed and the setup page/logs show the error.
 
 Do not commit local databases, downloaded IMDb datasets, `.env` files, or secrets. `.gitignore` excludes `imdb.db`, `*.db`, `.env`, `downloads/`, and secret folders/files.
 

@@ -20,6 +20,11 @@ from fetch_external_ratings import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _clear_database_download_url(monkeypatch):
+    monkeypatch.delenv("DATABASE_DOWNLOAD_URL", raising=False)
+
+
 @pytest.fixture()
 def client(tmp_path: Path):
     yield from make_client(tmp_path, with_akas=True)
@@ -71,6 +76,82 @@ def test_app_database_path_defaults_to_local_db(monkeypatch):
     app = create_app()
 
     assert app.config["DATABASE"] == DEFAULT_DB_PATH.resolve()
+
+
+def test_database_bootstrap_downloads_missing_database(monkeypatch, tmp_path: Path):
+    db_path = tmp_path / "data" / "imdb.db"
+    payload = b"sqlite database bytes"
+    opened_urls: list[str] = []
+
+    class FakeResponse:
+        headers = {"Content-Length": str(len(payload))}
+
+        def __init__(self) -> None:
+            self.stream = io.BytesIO(payload)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, _exc_type, _exc, _traceback) -> None:
+            return None
+
+        def read(self, size: int) -> bytes:
+            return self.stream.read(size)
+
+    def fake_urlopen(url: str, timeout: int):
+        opened_urls.append(url)
+        assert timeout == 60
+        return FakeResponse()
+
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
+    monkeypatch.setenv("DATABASE_DOWNLOAD_URL", "https://example.test/imdb.db")
+    monkeypatch.setattr("db_paths.urlopen", fake_urlopen)
+
+    create_app()
+
+    assert opened_urls == ["https://example.test/imdb.db"]
+    assert db_path.read_bytes() == payload
+
+
+def test_database_bootstrap_skips_existing_database(monkeypatch, tmp_path: Path):
+    db_path = tmp_path / "imdb.db"
+    db_path.write_bytes(b"already here")
+
+    def fail_urlopen(_url: str, timeout: int):
+        raise AssertionError("download should be skipped")
+
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
+    monkeypatch.setenv("DATABASE_DOWNLOAD_URL", "https://example.test/imdb.db")
+    monkeypatch.setattr("db_paths.urlopen", fail_urlopen)
+
+    create_app()
+
+    assert db_path.read_bytes() == b"already here"
+
+
+def test_database_bootstrap_failure_is_readable(monkeypatch, tmp_path: Path):
+    db_path = tmp_path / "data" / "imdb.db"
+
+    def fail_urlopen(_url: str, timeout: int):
+        raise OSError("network unavailable")
+
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
+    monkeypatch.setenv("DATABASE_DOWNLOAD_URL", "https://example.test/imdb.db")
+    monkeypatch.setattr("db_paths.urlopen", fail_urlopen)
+
+    app = create_app()
+
+    assert "Could not download database from DATABASE_DOWNLOAD_URL" in app.config[
+        "DATABASE_BOOTSTRAP_ERROR"
+    ]
+    assert "network unavailable" in app.config["DATABASE_BOOTSTRAP_ERROR"]
+    assert not db_path.exists()
+    assert not db_path.with_name(f".{db_path.name}.download").exists()
+
+    with app.test_client() as client:
+        html = client.get("/").get_data(as_text=True)
+
+    assert "Could not download database from DATABASE_DOWNLOAD_URL" in html
 
 
 def create_user(db_path: Path, username: str, password: str, user_id: int | None = None) -> None:

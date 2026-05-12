@@ -26,7 +26,13 @@ from flask import (
 )
 from werkzeug.security import check_password_hash
 
-from db_paths import BASE_DIR, DEFAULT_DB_PATH, configured_database_path
+from db_paths import (
+    BASE_DIR,
+    DEFAULT_DB_PATH,
+    DatabaseBootstrapError,
+    bootstrap_database_from_download_url,
+    configured_database_path,
+)
 
 PER_PAGE = 50
 PAGE_SIZE_OPTIONS = [25, 50, 100, 250, 500, 1000, "all"]
@@ -420,9 +426,16 @@ def quality_select_sql(
 
 
 def create_app() -> Flask:
+    logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", DEV_SECRET_KEY)
     app.config["DATABASE"] = configured_database_path()
+    app.config["DATABASE_BOOTSTRAP_ERROR"] = ""
+
+    try:
+        bootstrap_database_from_download_url(app.config["DATABASE"], logger=app.logger)
+    except DatabaseBootstrapError as exc:
+        app.config["DATABASE_BOOTSTRAP_ERROR"] = str(exc)
 
     @app.context_processor
     def inject_globals() -> dict[str, Any]:
@@ -715,6 +728,9 @@ def current_app_config(key: str) -> Any:
 def database_ready() -> tuple[bool, str]:
     path = Path(current_app_config("DATABASE"))
     if not path.exists():
+        bootstrap_error = current_app_config("DATABASE_BOOTSTRAP_ERROR")
+        if bootstrap_error:
+            return False, bootstrap_error
         return False, f"Database not found at {path}"
 
     try:
