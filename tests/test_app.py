@@ -12,6 +12,7 @@ import pytest
 from werkzeug.security import generate_password_hash
 
 from app import create_app
+from build_slim_db import build_slim_database
 from db_paths import DEFAULT_DB_PATH
 from fetch_external_ratings import (
     build_fetch_plan,
@@ -217,6 +218,17 @@ def create_user(db_path: Path, username: str, password: str, user_id: int | None
                 (user_id, username, generate_password_hash(password)),
             )
         conn.commit()
+
+
+def sqlite_table_exists(db_path: Path, table_name: str) -> bool:
+    with sqlite3.connect(db_path) as conn:
+        return (
+            conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                (table_name,),
+            ).fetchone()
+            is not None
+        )
 
 
 def login(client, username: str = "admin", password: str = "secret"):
@@ -523,6 +535,87 @@ def test_tv_episode_excluded_by_default(client):
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
+    assert "Episode Title" not in html
+
+
+def test_full_db_with_episodes_table_shows_episode_metadata(client):
+    response = client.get("/?q=Episode&title_types=tvEpisode")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Episode Title" in html
+    assert "Visible Series" in html
+    assert "S02E05" in html
+
+
+def test_home_page_loads_without_episodes_table(tmp_path: Path):
+    db_path = tmp_path / "slim-no-episodes.db"
+    build_test_db(db_path, with_akas=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DROP TABLE episodes")
+        conn.commit()
+
+    with make_client_for_db(db_path) as client:
+        response = client.get("/")
+        html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Browse IMDb" in html
+    assert "Visible Movie" in html
+    assert 'value="tvEpisode"' not in html
+
+
+def test_home_page_loads_with_actual_slim_db_without_episodes(tmp_path: Path):
+    source_db = tmp_path / "imdb.db"
+    slim_db = tmp_path / "imdb_slim.db"
+    build_test_db(source_db, with_akas=True)
+    build_slim_database(
+        source_db,
+        slim_db,
+        min_votes=0,
+        start_year=1900,
+        include_tv=True,
+    )
+
+    assert not sqlite_table_exists(slim_db, "episodes")
+
+    with make_client_for_db(slim_db) as client:
+        response = client.get("/")
+        html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Browse IMDb" in html
+    assert "Visible Movie" in html
+
+
+def test_movie_search_works_without_episodes_table(tmp_path: Path):
+    db_path = tmp_path / "slim-search-no-episodes.db"
+    build_test_db(db_path, with_akas=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DROP TABLE episodes")
+        conn.commit()
+
+    with make_client_for_db(db_path) as client:
+        response = client.get("/?q=Visible+Movie&title_types=movie")
+        html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Visible Movie" in html
+
+
+def test_episode_filter_is_ignored_without_episodes_table(tmp_path: Path):
+    db_path = tmp_path / "slim-episode-filter-no-episodes.db"
+    build_test_db(db_path, with_akas=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("DROP TABLE episodes")
+        conn.commit()
+
+    with make_client_for_db(db_path) as client:
+        response = client.get("/?q=Episode&title_types=tvEpisode")
+        html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "Browse IMDb" in html
     assert "Episode Title" not in html
 
 

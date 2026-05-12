@@ -467,14 +467,25 @@ def create_app() -> Flask:
         ensure_watchlist_schema()
         adult_unlocked = is_adult_unlocked()
         akas_available = table_exists("akas")
+        episodes_available = table_exists("episodes")
         filters = read_title_filters(request.args, adult_unlocked=adult_unlocked)
+        disable_episode_filters(filters, episodes_available)
         view_explicit = bool(request.args.get("view"))
         page = positive_int(request.args.get("page"), default=1)
-        page_data = find_titles(filters, page, akas_available=akas_available)
+        page_data = find_titles(
+            filters,
+            page,
+            akas_available=akas_available,
+            episodes_available=episodes_available,
+        )
         rows = page_data["rows"]
         has_next = page_data["has_next"]
         page = page_data["page"]
-        compare_rows = find_compare_titles(filters) if compare_ready(filters) else []
+        compare_rows = (
+            find_compare_titles(filters, episodes_available=episodes_available)
+            if compare_ready(filters)
+            else []
+        )
         prev_args = page_query_args(filters, page - 1) if page > 1 else {}
         next_args = page_query_args(filters, page + 1) if has_next else {}
         sort_controls = build_sort_controls(filters)
@@ -499,9 +510,11 @@ def create_app() -> Flask:
             view_explicit=view_explicit,
             adult_unlocked=adult_unlocked,
             akas_available=akas_available,
+            episodes_available=episodes_available,
             language_filter_unavailable=language_filter_unavailable(
                 filters, akas_available
             ),
+            title_type_options=title_type_options_for(episodes_available),
             sort_controls=sort_controls,
             sort_control_map={item["value"]: item for item in sort_controls},
             table_url=url_for("index", **view_query_args(filters, "table")),
@@ -639,9 +652,16 @@ def create_app() -> Flask:
         ensure_watchlist_schema()
         adult_unlocked = is_adult_unlocked()
         akas_available = table_exists("akas")
+        episodes_available = table_exists("episodes")
         filters = read_watchlist_filters(request.args, adult_unlocked=adult_unlocked)
+        disable_episode_filters(filters, episodes_available)
         page = positive_int(request.args.get("page"), default=1)
-        rows, has_next = find_watchlist(filters, page, akas_available=akas_available)
+        rows, has_next = find_watchlist(
+            filters,
+            page,
+            akas_available=akas_available,
+            episodes_available=episodes_available,
+        )
         prev_args = page_query_args(filters, page - 1) if page > 1 else {}
         next_args = page_query_args(filters, page + 1) if has_next else {}
 
@@ -653,9 +673,11 @@ def create_app() -> Flask:
             has_next=has_next,
             adult_unlocked=adult_unlocked,
             akas_available=akas_available,
+            episodes_available=episodes_available,
             language_filter_unavailable=language_filter_unavailable(
                 filters, akas_available
             ),
+            title_type_options=title_type_options_for(episodes_available),
             prev_args=prev_args,
             next_args=next_args,
             prev_url=url_for("watchlist", **prev_args) if prev_args else "",
@@ -674,7 +696,13 @@ def create_app() -> Flask:
         filters = read_watchlist_filters(
             request.args, adult_unlocked=is_adult_unlocked()
         )
-        rows = find_watchlist_for_export(filters, akas_available=table_exists("akas"))
+        episodes_available = table_exists("episodes")
+        disable_episode_filters(filters, episodes_available)
+        rows = find_watchlist_for_export(
+            filters,
+            akas_available=table_exists("akas"),
+            episodes_available=episodes_available,
+        )
         csv_data = render_watchlist_csv(rows)
         filename = f"watchlist-{datetime.now().date().isoformat()}.csv"
         return Response(
@@ -693,7 +721,13 @@ def create_app() -> Flask:
         filters = read_title_filters(
             request.args, adult_unlocked=is_adult_unlocked()
         )
-        rows = find_titles_for_export(filters, akas_available=table_exists("akas"))
+        episodes_available = table_exists("episodes")
+        disable_episode_filters(filters, episodes_available)
+        rows = find_titles_for_export(
+            filters,
+            akas_available=table_exists("akas"),
+            episodes_available=episodes_available,
+        )
         csv_data = render_titles_csv(rows, filters)
         filename = f"titles-{datetime.now().date().isoformat()}.csv"
         return Response(
@@ -942,6 +976,22 @@ def read_watchlist_filters(args: Any, adult_unlocked: bool = False) -> dict[str,
     return filters
 
 
+def disable_episode_filters(filters: dict[str, Any], episodes_available: bool) -> None:
+    if episodes_available:
+        return
+    filters["title_types"] = [
+        value for value in filters.get("title_types", []) if value != "tvEpisode"
+    ]
+    if not filters["title_types"]:
+        filters["title_types"] = DEFAULT_TITLE_TYPE_FILTERS.copy()
+
+
+def title_type_options_for(episodes_available: bool) -> list[dict[str, Any]]:
+    if episodes_available:
+        return TITLE_TYPE_OPTIONS
+    return [option for option in TITLE_TYPE_OPTIONS if option["value"] != "tvEpisode"]
+
+
 def active_filter_args(filters: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in filters.items() if value and key != "sort"}
 
@@ -991,7 +1041,10 @@ def build_sort_controls(filters: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def find_titles(
-    filters: dict[str, Any], page: int, akas_available: bool
+    filters: dict[str, Any],
+    page: int,
+    akas_available: bool,
+    episodes_available: bool,
 ) -> dict[str, Any]:
     start_time = time.perf_counter()
     quality_sql = quality_score_sql_parts(
@@ -1024,9 +1077,7 @@ def find_titles(
             t.premiered,
             t.type,
             t.genres,
-            e.season_number,
-            e.episode_number,
-            s.primary_title AS series_title,
+            {episode_select_sql(episodes_available)}
             r.rating,
             r.votes,
             er.metascore,
@@ -1037,8 +1088,7 @@ def find_titles(
             {quality_select_sql(quality_sql, bool(filters.get("show_score_breakdown")))},
             wl.status AS watch_status
         FROM titles AS t
-        LEFT JOIN episodes AS e ON e.episode_title_id = t.title_id
-        LEFT JOIN titles AS s ON s.title_id = e.show_title_id
+        {episode_join_sql(episodes_available)}
         LEFT JOIN ratings AS r ON r.title_id = t.title_id
         LEFT JOIN external_ratings AS er ON er.title_id = t.title_id
         LEFT JOIN poster_cache AS pc ON pc.title_id = t.title_id
@@ -1089,8 +1139,31 @@ def watchlist_join_sql() -> str:
     return f"LEFT JOIN watchlist AS wl ON wl.title_id = t.title_id AND wl.user_id = {user_id}"
 
 
+def episode_select_sql(episodes_available: bool) -> str:
+    if episodes_available:
+        return """
+            e.season_number,
+            e.episode_number,
+            s.primary_title AS series_title,
+        """
+    return """
+            NULL AS season_number,
+            NULL AS episode_number,
+            NULL AS series_title,
+        """
+
+
+def episode_join_sql(episodes_available: bool) -> str:
+    if not episodes_available:
+        return ""
+    return """
+        LEFT JOIN episodes AS e ON e.episode_title_id = t.title_id
+        LEFT JOIN titles AS s ON s.title_id = e.show_title_id
+    """
+
+
 def find_titles_for_export(
-    filters: dict[str, Any], akas_available: bool
+    filters: dict[str, Any], akas_available: bool, episodes_available: bool
 ) -> list[sqlite3.Row]:
     quality_sql = quality_score_sql_parts(
         filters.get("quality_profile"), filters.get("score_mode")
@@ -1112,9 +1185,7 @@ def find_titles_for_export(
             t.premiered,
             t.type,
             t.genres,
-            e.season_number,
-            e.episode_number,
-            s.primary_title AS series_title,
+            {episode_select_sql(episodes_available)}
             r.rating,
             r.votes,
             er.metascore,
@@ -1125,8 +1196,7 @@ def find_titles_for_export(
             {quality_select_sql(quality_sql, bool(filters.get("show_score_breakdown")))},
             wl.status AS watch_status
         FROM titles AS t
-        LEFT JOIN episodes AS e ON e.episode_title_id = t.title_id
-        LEFT JOIN titles AS s ON s.title_id = e.show_title_id
+        {episode_join_sql(episodes_available)}
         LEFT JOIN ratings AS r ON r.title_id = t.title_id
         LEFT JOIN external_ratings AS er ON er.title_id = t.title_id
         LEFT JOIN poster_cache AS pc ON pc.title_id = t.title_id
@@ -1138,28 +1208,37 @@ def find_titles_for_export(
 
 
 def find_watchlist(
-    filters: dict[str, Any], page: int, akas_available: bool
+    filters: dict[str, Any], page: int, akas_available: bool, episodes_available: bool
 ) -> tuple[list[sqlite3.Row], bool]:
     rows = query_watchlist(
         filters,
         limit=PER_PAGE + 1,
         offset=(page - 1) * PER_PAGE,
         akas_available=akas_available,
+        episodes_available=episodes_available,
     )
     return rows[:PER_PAGE], len(rows) > PER_PAGE
 
 
 def find_watchlist_for_export(
-    filters: dict[str, Any], akas_available: bool
+    filters: dict[str, Any], akas_available: bool, episodes_available: bool
 ) -> list[sqlite3.Row]:
-    return query_watchlist(filters, limit=None, offset=0, akas_available=akas_available)
+    return query_watchlist(
+        filters,
+        limit=None,
+        offset=0,
+        akas_available=akas_available,
+        episodes_available=episodes_available,
+    )
 
 
 def compare_ready(filters: dict[str, Any]) -> bool:
     return 2 <= len(filters.get("compare_ids") or []) <= 4
 
 
-def find_compare_titles(filters: dict[str, Any]) -> list[sqlite3.Row]:
+def find_compare_titles(
+    filters: dict[str, Any], episodes_available: bool
+) -> list[sqlite3.Row]:
     title_ids = filters.get("compare_ids") or []
     if not title_ids:
         return []
@@ -1181,9 +1260,7 @@ def find_compare_titles(filters: dict[str, Any]) -> list[sqlite3.Row]:
             t.premiered,
             t.type,
             t.genres,
-            e.season_number,
-            e.episode_number,
-            s.primary_title AS series_title,
+            {episode_select_sql(episodes_available)}
             r.rating,
             r.votes,
             er.metascore,
@@ -1194,8 +1271,7 @@ def find_compare_titles(filters: dict[str, Any]) -> list[sqlite3.Row]:
             {quality_select_sql(quality_sql, True)},
             wl.status AS watch_status
         FROM titles AS t
-        LEFT JOIN episodes AS e ON e.episode_title_id = t.title_id
-        LEFT JOIN titles AS s ON s.title_id = e.show_title_id
+        {episode_join_sql(episodes_available)}
         LEFT JOIN ratings AS r ON r.title_id = t.title_id
         LEFT JOIN external_ratings AS er ON er.title_id = t.title_id
         LEFT JOIN poster_cache AS pc ON pc.title_id = t.title_id
@@ -1207,7 +1283,11 @@ def find_compare_titles(filters: dict[str, Any]) -> list[sqlite3.Row]:
 
 
 def query_watchlist(
-    filters: dict[str, Any], limit: int | None, offset: int, akas_available: bool
+    filters: dict[str, Any],
+    limit: int | None,
+    offset: int,
+    akas_available: bool,
+    episodes_available: bool,
 ) -> list[sqlite3.Row]:
     quality_sql = quality_score_sql_parts(
         filters.get("quality_profile"), filters.get("score_mode")
@@ -1232,9 +1312,7 @@ def query_watchlist(
             t.premiered,
             t.type,
             t.genres,
-            e.season_number,
-            e.episode_number,
-            s.primary_title AS series_title,
+            {episode_select_sql(episodes_available)}
             r.rating,
             r.votes,
             er.metascore,
@@ -1248,8 +1326,7 @@ def query_watchlist(
             wl.added_at
         FROM watchlist AS wl
         INNER JOIN titles AS t ON t.title_id = wl.title_id
-        LEFT JOIN episodes AS e ON e.episode_title_id = t.title_id
-        LEFT JOIN titles AS s ON s.title_id = e.show_title_id
+        {episode_join_sql(episodes_available)}
         LEFT JOIN ratings AS r ON r.title_id = t.title_id
         LEFT JOIN external_ratings AS er ON er.title_id = t.title_id
         LEFT JOIN poster_cache AS pc ON pc.title_id = t.title_id
