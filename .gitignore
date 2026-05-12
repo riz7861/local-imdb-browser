@@ -49,10 +49,13 @@ secrets/
 # SQLite databases and transient files
 *.db
 *.db-*
+*.db.gz
 *.sqlite
 *.sqlite3
 *.sqlite-*
 *.sqlite3-*
+*.sqlite.gz
+*.sqlite3.gz
 
 # IMDb local datasets and generated imports
 downloads/

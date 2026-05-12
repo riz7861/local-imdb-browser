@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import gzip
 from pathlib import Path
 from typing import Protocol
 from urllib.error import HTTPError, URLError
@@ -66,8 +67,16 @@ def bootstrap_database_from_download_url(
             db_path,
         )
         with urlopen(url, timeout=60) as response, tmp_path.open("wb") as output:
-            content_length = _content_length(response.headers.get("Content-Length"))
-            _stream_response(response, output, content_length, logger)
+            gzip_download = _is_gzip_download(url, response.headers)
+            if gzip_download:
+                _log_info(logger, "Database bootstrap detected gzip-compressed input.")
+            stream = gzip.GzipFile(fileobj=response) if gzip_download else response
+            content_length = (
+                None
+                if gzip_download
+                else _content_length(response.headers.get("Content-Length"))
+            )
+            _stream_response(stream, output, content_length, logger)
         tmp_path.replace(db_path)
         _log_info(logger, "Database bootstrap complete: %s", db_path)
     except (OSError, HTTPError, URLError, TimeoutError) as exc:
@@ -110,6 +119,15 @@ def _content_length(value: str | None) -> int | None:
     return parsed if parsed >= 0 else None
 
 
+def _is_gzip_download(url: str, headers: object) -> bool:
+    clean_url = url.split("?", 1)[0].lower()
+    if clean_url.endswith(".gz"):
+        return True
+    content_encoding = (headers.get("Content-Encoding") or "").lower()
+    content_type = (headers.get("Content-Type") or "").lower()
+    return "gzip" in content_encoding or "gzip" in content_type
+
+
 def _log_download_progress(
     downloaded: int, content_length: int | None, logger: LoggerLike | None
 ) -> None:
@@ -118,12 +136,12 @@ def _log_download_progress(
         total_mb = content_length / (1024 * 1024)
         _log_info(
             logger,
-            "Database bootstrap downloaded %.1f MB of %.1f MB.",
+            "Database bootstrap wrote %.1f MB of %.1f MB.",
             downloaded_mb,
             total_mb,
         )
     else:
-        _log_info(logger, "Database bootstrap downloaded %.1f MB.", downloaded_mb)
+        _log_info(logger, "Database bootstrap wrote %.1f MB.", downloaded_mb)
 
 
 def _log_info(logger: LoggerLike | None, message: str, *args: object) -> None:

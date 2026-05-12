@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import csv
+import gzip
 import io
 import sqlite3
 from pathlib import Path
@@ -110,6 +111,39 @@ def test_database_bootstrap_downloads_missing_database(monkeypatch, tmp_path: Pa
     create_app()
 
     assert opened_urls == ["https://example.test/imdb.db"]
+    assert db_path.read_bytes() == payload
+
+
+def test_database_bootstrap_decompresses_gzip_database(monkeypatch, tmp_path: Path):
+    db_path = tmp_path / "data" / "imdb.db"
+    payload = b"sqlite database bytes"
+    compressed = gzip.compress(payload)
+
+    class FakeResponse:
+        headers = {"Content-Length": str(len(compressed))}
+
+        def __init__(self) -> None:
+            self.stream = io.BytesIO(compressed)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, _exc_type, _exc, _traceback) -> None:
+            return None
+
+        def read(self, size: int) -> bytes:
+            return self.stream.read(size)
+
+    def fake_urlopen(_url: str, timeout: int):
+        assert timeout == 60
+        return FakeResponse()
+
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
+    monkeypatch.setenv("DATABASE_DOWNLOAD_URL", "https://example.test/imdb_slim.db.gz")
+    monkeypatch.setattr("db_paths.urlopen", fake_urlopen)
+
+    create_app()
+
     assert db_path.read_bytes() == payload
 
 

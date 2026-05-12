@@ -76,7 +76,7 @@ Deploy from GitHub:
 4. Add a Railway volume to the app service and mount it at `/data`.
 5. In the Railway service variables, set `SECRET_KEY` to a long random value and set `DATABASE_PATH=/data/imdb.db`. Optional fetcher variables such as `OMDB_API_KEY` and `TMDB_API_KEY` can also be set there.
 6. Create, restore, or bootstrap the production SQLite database separately. The repository does not include `imdb.db`, and Railway's ephemeral app filesystem should not be used for the production database.
-7. If you already have a prebuilt database hosted at a private download URL, set `DATABASE_DOWNLOAD_URL` to that URL. On startup, the app checks `DATABASE_PATH`; if `/data/imdb.db` is missing, it streams the download to a temporary file in `/data` and moves it into place when complete. Existing databases are left untouched, so the download only runs once per empty volume.
+7. If you already have a prebuilt database hosted at a private download URL, set `DATABASE_DOWNLOAD_URL` to that URL. On startup, the app checks `DATABASE_PATH`; if `/data/imdb.db` is missing, it streams the download to a temporary file in `/data` and moves it into place when complete. `.gz` URLs are decompressed as they stream. Existing databases are left untouched, so the download only runs once per empty volume.
 8. If you are importing directly on Railway instead, run the setup/import command against the mounted volume path, for example from a Railway shell or one-off command:
 
 ```bash
@@ -94,7 +94,31 @@ python setup_imdb.py --with-akas
 
 Startup note: production data must exist before useful browsing. The app can start without `imdb.db` and show the setup-needed page. If `DATABASE_DOWNLOAD_URL` is set and the download fails, the partial file is removed and the setup page/logs show the error.
 
-Do not commit local databases, downloaded IMDb datasets, `.env` files, or secrets. `.gitignore` excludes `imdb.db`, `*.db`, `.env`, `downloads/`, and secret folders/files.
+Do not commit local databases, compressed database artifacts, downloaded IMDb datasets, `.env` files, or secrets. `.gitignore` excludes `imdb.db`, `*.db`, `*.db.gz`, `.env`, `downloads/`, and secret folders/files.
+
+## Full DB vs Slim DB
+
+The full `imdb.db` is best for local browsing because it can include the broad IMDb title set plus optional `akas` data. That file can be too large for Railway's 500MB persistent volume target.
+
+For Railway, build a slim production database from your local full database:
+
+```bash
+python build_slim_db.py --input imdb.db --output imdb_slim.db --min-votes 1000 --start-year 1950 --hollywood-only --include-tv --include-watchlist-always
+```
+
+The Railway command above keeps only non-adult `movie`, `tvSeries`, `tvMiniSeries`, and `tvMovie` rows, excludes episodes/shorts/video games/podcasts, copies matching `ratings`, `external_ratings`, `poster_cache`, `users`, and `watchlist` rows, and creates indexes for title type, year, votes, IMDb rating, Metascore, Rotten Tomatoes, and title search. Without `--include-tv`, the builder keeps movies only. It does not copy `episodes`, `akas`, downloads, or cache data.
+
+When `--hollywood-only` is used with an `akas` table, the builder keeps titles with US, GB, CA, or AU region data, or English language data. Without `akas`, language filtering is approximate: it falls back to the allowed title types, minimum votes, start year, non-adult rows, and non-empty genres.
+
+The script prints the original title count, slim title count, final file size, and an estimated Railway compatibility status.
+
+For Railway bootstrap artifacts, prefer `imdb_slim.db.gz` instead of `imdb.db.gz`:
+
+```bash
+python -c "import gzip, shutil; src=open('imdb_slim.db','rb'); dst=gzip.open('imdb_slim.db.gz','wb'); shutil.copyfileobj(src,dst); src.close(); dst.close()"
+```
+
+Upload `imdb_slim.db.gz` somewhere private, set `DATABASE_DOWNLOAD_URL` to that URL, and keep `DATABASE_PATH=/data/imdb.db`. The app decompresses `.gz` downloads while streaming them into the Railway volume.
 
 ## Setup Notes
 
