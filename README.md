@@ -73,9 +73,22 @@ Deploy from GitHub:
 1. Push this repository to GitHub.
 2. In Railway, create a new project and choose `Deploy from GitHub repo`.
 3. Select `riz7861/local-imdb-browser` and deploy the app service.
-4. In the Railway service variables, set `SECRET_KEY` to a long random value. Optional fetcher variables such as `OMDB_API_KEY`, `TMDB_API_KEY`, and `IMDB_BROWSER_DB` can also be set there.
-5. Create or restore the production SQLite database separately. The repository does not include `imdb.db`; use a persistent Railway volume or another restore process, then point `IMDB_BROWSER_DB` at that database path if it is not the default app root path.
-6. Open the service logs to confirm Gunicorn started, then use Networking > Public Networking > Generate Domain to expose the app.
+4. Add a Railway volume to the app service and mount it at `/data`.
+5. In the Railway service variables, set `SECRET_KEY` to a long random value and set `DATABASE_PATH=/data/imdb.db`. Optional fetcher variables such as `OMDB_API_KEY` and `TMDB_API_KEY` can also be set there.
+6. Create or restore the production SQLite database separately. The repository does not include `imdb.db`, and Railway's ephemeral app filesystem should not be used for the production database.
+7. Run the setup/import command against the mounted volume path, for example from a Railway shell or one-off command:
+
+```bash
+python setup_imdb.py --db /data/imdb.db --with-akas
+```
+
+The scripts also read `DATABASE_PATH`, so this is equivalent when the Railway variable is set:
+
+```bash
+python setup_imdb.py --with-akas
+```
+
+8. Open the service logs to confirm Gunicorn started, then use Networking > Public Networking > Generate Domain to expose the app.
 
 Startup note: production data must exist before useful browsing. The app can start without `imdb.db` and show the setup-needed page, but Railway deployment does not build or restore the IMDb database automatically.
 
@@ -314,13 +327,15 @@ Use `Export all filtered results to CSV` to export the full filtered and sorted 
 Use a custom database path when running the app:
 
 ```powershell
-$env:IMDB_BROWSER_DB = "C:\path\to\imdb.db"
+$env:DATABASE_PATH = "C:\path\to\imdb.db"
 python app.py
 ```
 
 On macOS/Linux:
 
 ```bash
-export IMDB_BROWSER_DB=/path/to/imdb.db
+export DATABASE_PATH=/path/to/imdb.db
 python app.py
 ```
+
+`DATABASE_PATH` is shared by `app.py`, `setup_imdb.py`, `manage_users.py`, `fetch_external_ratings.py`, and `fetch_posters.py`. Each script still accepts `--db` when you want to override the environment for a single command.

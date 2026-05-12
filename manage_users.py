@@ -7,12 +7,16 @@ from pathlib import Path
 
 from werkzeug.security import generate_password_hash
 
-from app import DEFAULT_DB_PATH, create_app, ensure_watchlist_schema, get_db
+from app import create_app, ensure_watchlist_schema, get_db
+from db_paths import configured_database_path
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Manage local IMDb browser users.")
-    parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to imdb.db")
+    parser.add_argument(
+        "--db",
+        help="Path to imdb.db; defaults to DATABASE_PATH or local imdb.db",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     create_admin = subparsers.add_parser("create-admin", help="Create or update an admin user")
@@ -21,7 +25,9 @@ def main() -> int:
 
     args = parser.parse_args()
     if args.command == "create-admin":
-        return create_admin_user(Path(args.db), args.username, args.password)
+        return create_admin_user(
+            configured_database_path(args.db), args.username, args.password
+        )
     return 0
 
 

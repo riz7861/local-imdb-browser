@@ -11,6 +11,7 @@ import pytest
 from werkzeug.security import generate_password_hash
 
 from app import create_app
+from db_paths import DEFAULT_DB_PATH
 from fetch_external_ratings import (
     build_fetch_plan,
     ensure_external_schema,
@@ -51,6 +52,25 @@ def make_client_for_db(db_path: Path):
         TESTING=True,
     )
     return app.test_client()
+
+
+def test_app_database_path_uses_database_path_env(monkeypatch, tmp_path: Path):
+    db_path = tmp_path / "imdb.db"
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
+    monkeypatch.delenv("IMDB_BROWSER_DB", raising=False)
+
+    app = create_app()
+
+    assert app.config["DATABASE"] == db_path.resolve()
+
+
+def test_app_database_path_defaults_to_local_db(monkeypatch):
+    monkeypatch.delenv("DATABASE_PATH", raising=False)
+    monkeypatch.delenv("IMDB_BROWSER_DB", raising=False)
+
+    app = create_app()
+
+    assert app.config["DATABASE"] == DEFAULT_DB_PATH.resolve()
 
 
 def create_user(db_path: Path, username: str, password: str, user_id: int | None = None) -> None:

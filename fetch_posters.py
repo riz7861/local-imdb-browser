@@ -11,9 +11,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+from db_paths import BASE_DIR, configured_database_path
 
-BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_DB_PATH = BASE_DIR / "imdb.db"
 TMDB_FIND_URL = "https://api.themoviedb.org/3/find/{title_id}"
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w342"
 DEFAULT_LIMIT = 100
@@ -22,7 +21,10 @@ DEFAULT_TYPES = ["movie", "tvSeries", "tvMiniSeries", "tvMovie"]
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fetch TMDb poster URLs by IMDb ID.")
-    parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to imdb.db")
+    parser.add_argument(
+        "--db",
+        help="Path to imdb.db; defaults to DATABASE_PATH or local imdb.db",
+    )
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT, help="Maximum titles to fetch")
     parser.add_argument("--delay", type=float, default=0.25, help="Seconds between requests")
     args = parser.parse_args()
@@ -32,7 +34,7 @@ def main() -> int:
     if not api_key:
         raise SystemExit("TMDB_API_KEY must be set in .env or the environment.")
 
-    with sqlite3.connect(Path(args.db).expanduser().resolve()) as conn:
+    with sqlite3.connect(configured_database_path(args.db)) as conn:
         ensure_poster_schema(conn)
         title_ids = candidate_title_ids(conn, max(args.limit, 0))
         fetched = 0

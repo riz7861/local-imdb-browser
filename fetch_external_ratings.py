@@ -11,9 +11,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+from db_paths import BASE_DIR, configured_database_path
 
-BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_DB_PATH = BASE_DIR / "imdb.db"
 OMDB_URL = "https://www.omdbapi.com/"
 DEFAULT_TYPES = ["movie", "tvSeries", "tvMiniSeries", "tvMovie"]
 DEFAULT_MIN_VOTES = 5000
@@ -23,7 +22,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Fetch Metascore and Rotten Tomatoes ratings from OMDb."
     )
-    parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to imdb.db")
+    parser.add_argument(
+        "--db",
+        help="Path to imdb.db; defaults to DATABASE_PATH or local imdb.db",
+    )
     parser.add_argument("--limit", type=int, default=100, help="Maximum titles to fetch")
     parser.add_argument(
         "--min-votes",
@@ -59,7 +61,7 @@ def main() -> int:
     if not api_key:
         raise SystemExit("OMDB_API_KEY must be set in .env or the environment.")
 
-    db_path = Path(args.db).expanduser().resolve()
+    db_path = configured_database_path(args.db)
     title_types = parse_types(args.types)
     with sqlite3.connect(db_path) as conn:
         ensure_external_schema(conn)

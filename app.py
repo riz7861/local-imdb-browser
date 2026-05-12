@@ -26,9 +26,8 @@ from flask import (
 )
 from werkzeug.security import check_password_hash
 
+from db_paths import BASE_DIR, DEFAULT_DB_PATH, configured_database_path
 
-BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_DB_PATH = BASE_DIR / "imdb.db"
 PER_PAGE = 50
 PAGE_SIZE_OPTIONS = [25, 50, 100, 250, 500, 1000, "all"]
 DEFAULT_PAGE_SIZE = 50
@@ -423,7 +422,7 @@ def quality_select_sql(
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", DEV_SECRET_KEY)
-    app.config["DATABASE"] = Path(os.environ.get("IMDB_BROWSER_DB", DEFAULT_DB_PATH))
+    app.config["DATABASE"] = configured_database_path()
 
     @app.context_processor
     def inject_globals() -> dict[str, Any]:

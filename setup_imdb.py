@@ -8,9 +8,8 @@ import sys
 import sysconfig
 from pathlib import Path
 
+from db_paths import BASE_DIR, configured_database_path
 
-BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_DB_PATH = BASE_DIR / "imdb.db"
 DEFAULT_CACHE_DIR = BASE_DIR / "downloads"
 ONLY_TABLES = "titles,ratings,episodes"
 ONLY_TABLES_WITH_AKAS = "titles,akas,ratings,episodes"
@@ -20,7 +19,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Install dependencies and build a local IMDb SQLite database."
     )
-    parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to imdb.db")
+    parser.add_argument(
+        "--db",
+        help="Path to imdb.db; defaults to DATABASE_PATH or local imdb.db",
+    )
     parser.add_argument(
         "--cache-dir",
         default=str(DEFAULT_CACHE_DIR),
@@ -53,7 +55,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    db_path = Path(args.db).expanduser().resolve()
+    db_path = configured_database_path(args.db)
     cache_dir = Path(args.cache_dir).expanduser().resolve()
 
     if not args.skip_install:
