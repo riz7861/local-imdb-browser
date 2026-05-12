@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Login{% endblock %}
+
+{% block content %}
+  <section class="setup-panel auth-panel">
+    <h1>Login</h1>
+    <p>Sign in to save and manage your local watchlist.</p>
+    <form class="auth-form" method="post" action="{{ url_for('login', next=request.args.get('next', '')) }}">
+      <label>
+        Username
+        <input type="text" name="username" autocomplete="username" required autofocus>
+      </label>
+      <label>
+        Password
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit">Login</button>
+    </form>
+  </section>
+{% endblock %}

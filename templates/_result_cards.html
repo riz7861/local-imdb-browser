@@ -1,0 +1,142 @@
+<section class="results-list" aria-label="IMDb result cards">
+  {% for row in rows %}
+    <article class="result-card">
+      <div class="poster-card">
+        {% if row.poster_url %}
+          <img src="{{ row.poster_url }}" alt="Poster for {{ row.primary_title }}" loading="lazy">
+        {% else %}
+          <span class="poster-placeholder">No poster</span>
+        {% endif %}
+      </div>
+      <div class="result-main">
+        <div>
+          <label class="compare-card-check">
+            <input type="checkbox" name="compare_ids" value="{{ row.title_id }}" form="compare-form" {% if row.title_id in filters.compare_ids %}checked{% endif %}>
+            <span>Compare</span>
+          </label>
+          {% if row.type == "tvEpisode" and row.series_title %}
+            <h2>{{ row.series_title }} &mdash; {{ episode_code(row.season_number, row.episode_number) }}{% if row.season_number is not none or row.episode_number is not none %}: {% endif %}{{ row.primary_title }}</h2>
+          {% else %}
+            <h2>{{ row.primary_title }}</h2>
+          {% endif %}
+          <p class="metadata">
+            <span>{{ row.premiered or "Unknown year" }}</span>
+            <span>{{ title_type_label(row.type) }}</span>
+            <span>{{ row.genres or "No genres" }}</span>
+            <span>{% if row.rating is not none %}IMDb {{ "%.1f"|format(row.rating) }}{% else %}IMDb N/A{% endif %}</span>
+            <span>{% if row.votes is not none %}{{ "{:,}".format(row.votes) }} votes{% else %}No votes{% endif %}</span>
+            <span>{% if row.metascore is not none %}Metascore {{ row.metascore }}{% else %}Metascore N/A{% endif %}</span>
+            <span>{% if row.rotten_tomatoes_score is not none %}RT {{ row.rotten_tomatoes_score }}%{% else %}RT N/A{% endif %}</span>
+            <span title="Blends IMDb rating, vote confidence, Metascore, and Rotten Tomatoes where available.">
+              {% if row.quality_score is not none %}Quality {{ "%.1f"|format(row.quality_score) }} <small class="profile-pill compact">{{ quality_profile_label(filters.quality_profile) }}</small> <small class="profile-pill compact">{{ quality_score_mode_label(filters.score_mode) }}</small>{% else %}Quality N/A{% endif %}
+            </span>
+          </p>
+          {% if row.quality_score is not none and filters.show_score_breakdown %}
+            <details class="score-details card-score" open>
+              <summary>Score breakdown</summary>
+              <dl class="score-breakdown">
+                <div>
+                  <dt>Raw IMDb 0-100</dt>
+                  <dd>{{ "%.1f"|format(row.raw_imdb_score) if row.raw_imdb_score is not none else "N/A" }}</dd>
+                </div>
+                <div>
+                  <dt>IMDb adjusted</dt>
+                  <dd>{{ "%.1f"|format(row.adjusted_imdb_score) if row.adjusted_imdb_score is not none else "N/A" }}</dd>
+                </div>
+                <div>
+                  <dt>Vote confidence</dt>
+                  <dd>{{ "%.1f"|format(row.vote_confidence_score) if row.vote_confidence_score is not none else "N/A" }}</dd>
+                </div>
+                <div>
+                  <dt>Metascore used</dt>
+                  <dd>{{ "%.1f"|format(row.metascore_used) if row.metascore_used is not none else "N/A" }}</dd>
+                </div>
+                <div>
+                  <dt>RT used</dt>
+                  <dd>{{ "%.1f"|format(row.rotten_tomatoes_score_used) if row.rotten_tomatoes_score_used is not none else "N/A" }}</dd>
+                </div>
+                <div>
+                  <dt>IMDb contribution</dt>
+                  <dd>{{ "%.1f"|format(row.imdb_score_contribution) if row.imdb_score_contribution is not none else "N/A" }}</dd>
+                </div>
+                <div>
+                  <dt>Meta contribution</dt>
+                  <dd>{{ "%.1f"|format(row.metascore_score_contribution) if row.metascore_score_contribution is not none else "N/A" }}</dd>
+                </div>
+                <div>
+                  <dt>RT contribution</dt>
+                  <dd>{{ "%.1f"|format(row.rotten_tomatoes_score_contribution) if row.rotten_tomatoes_score_contribution is not none else "N/A" }}</dd>
+                </div>
+                <div>
+                  <dt>Missing/fallback</dt>
+                  <dd>{{ row.quality_missing_summary }}</dd>
+                </div>
+                <div>
+                  <dt>Vote contribution</dt>
+                  <dd>{{ "%.1f"|format(row.vote_confidence_score_contribution) if row.vote_confidence_score_contribution is not none else "N/A" }}</dd>
+                </div>
+                <div>
+                  <dt>Source spread</dt>
+                  <dd>{{ "%.1f"|format(row.source_spread) if row.source_spread is not none else "N/A" }}</dd>
+                </div>
+                <div>
+                  <dt>Mode adjustment</dt>
+                  <dd>{{ "%.1f"|format(row.quality_mode_adjustment) if row.quality_mode_adjustment is not none else "N/A" }}</dd>
+                </div>
+                <div>
+                  <dt>Before rounding</dt>
+                  <dd>{{ "%.3f"|format(row.quality_score_unrounded) if row.quality_score_unrounded is not none else "N/A" }}</dd>
+                </div>
+                <div>
+                  <dt>Final score</dt>
+                  <dd>{{ "%.1f"|format(row.quality_score) }}</dd>
+                </div>
+              </dl>
+            </details>
+          {% endif %}
+          {% if row.type == "tvEpisode" %}
+            <dl class="episode-fields">
+              <div>
+                <dt>Series</dt>
+                <dd>{{ row.series_title or "Unknown series" }}</dd>
+              </div>
+              <div>
+                <dt>Season</dt>
+                <dd>{{ row.season_number if row.season_number is not none else "" }}</dd>
+              </div>
+              <div>
+                <dt>Episode</dt>
+                <dd>{{ row.episode_number if row.episode_number is not none else "" }}</dd>
+              </div>
+            </dl>
+          {% endif %}
+          <span class="title-id">{{ row.title_id }}</span>
+        </div>
+      </div>
+      <div class="result-actions">
+        <a class="button secondary" href="{{ imdb_url(row.title_id) }}" target="_blank" rel="noreferrer">IMDb</a>
+        {% if not current_user %}
+          <a class="button secondary" href="{{ url_for('login', next=request.full_path) }}">Login to save</a>
+        {% elif row.watch_status %}
+          <form method="post" action="{{ url_for('remove_from_watchlist', title_id=row.title_id) }}">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <button class="secondary danger" type="submit">Remove</button>
+          </form>
+          <span class="status-pill">{{ row.watch_status.replace("_", " ") }}</span>
+        {% else %}
+          <form class="inline-add" method="post" action="{{ url_for('add_to_watchlist', title_id=row.title_id) }}">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <select name="status" aria-label="Watch status">
+              {% for value, label in watch_statuses %}
+                <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit">Add</button>
+          </form>
+        {% endif %}
+      </div>
+    </article>
+  {% else %}
+    <p class="empty">No titles matched those filters.</p>
+  {% endfor %}
+</section>

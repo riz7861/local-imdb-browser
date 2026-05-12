@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block title %}Watchlist{% endblock %}
+
+{% block content %}
+  <section class="page-heading">
+    <div>
+      <h1>Watchlist</h1>
+      <p>Stored locally in {{ db_path }}</p>
+    </div>
+    <a class="button" href="{{ export_url }}">Export CSV</a>
+  </section>
+
+  <form class="filters" method="get" action="{{ url_for('watchlist') }}">
+    <label class="filter-search">
+      Search
+      <input type="search" name="q" value="{{ filters.q }}" placeholder="Title text">
+    </label>
+    <label>
+      Status
+      <select name="status">
+        <option value="">Any</option>
+        {% for value, label in watch_statuses %}
+          <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <fieldset class="type-options">
+      <legend>Title types</legend>
+      {% for option in title_type_options %}
+        <label class="check-option">
+          <input type="checkbox" name="title_types" value="{{ option.value }}" {% if option.value in filters.title_types %}checked{% endif %}>
+          <span>{{ option.label }}</span>
+        </label>
+      {% endfor %}
+    </fieldset>
+    <label>
+      Genre
+      <select name="genre">
+        <option value="">Any</option>
+        {% for item in genres %}
+          <option value="{{ item }}" {% if filters.genre == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Region/language
+      <select name="language_category" {% if not akas_available %}disabled{% endif %}>
+        <option value="">Any</option>
+        {% for value, item in language_groups.items() %}
+          <option value="{{ value }}" {% if filters.language_category == value %}selected{% endif %}>{{ item.label }}</option>
+        {% endfor %}
+      </select>
+      {% if not akas_available %}
+        <span class="field-note">Requires --with-akas</span>
+      {% else %}
+        <span class="field-note">Region/language based</span>
+      {% endif %}
+    </label>
+    <label>
+      Min rating
+      <input type="number" name="min_rating" value="{{ filters.min_rating }}" min="0" max="10" step="0.1">
+    </label>
+    <label>
+      Min votes
+      <input type="number" name="min_votes" value="{{ filters.min_votes }}" min="0">
+    </label>
+    <label>
+      Min Metascore
+      <input type="number" name="min_metascore" value="{{ filters.min_metascore }}" min="0" max="100">
+    </label>
+    <label>
+      Min Rotten Tomatoes
+      <input type="number" name="min_rotten_tomatoes" value="{{ filters.min_rotten_tomatoes }}" min="0" max="100">
+    </label>
+    <div class="adult-filter">
+      {% if adult_unlocked %}
+        <label class="check-option">
+          <input type="checkbox" name="include_adult" value="1" {% if filters.include_adult %}checked{% endif %}>
+          <span>Include adult titles</span>
+        </label>
+        <button class="secondary" type="submit" formaction="{{ url_for('lock_adult_content') }}" formmethod="post">Lock</button>
+      {% else %}
+        <a class="button secondary" href="{{ url_for('adult_content_lock', next=request.full_path) }}">Adult filter locked</a>
+      {% endif %}
+    </div>
+    <div class="filter-actions">
+      <button type="submit">Apply</button>
+      <a class="button secondary" href="{{ url_for('watchlist') }}">Reset</a>
+    </div>
+  </form>
+
+  {% if not akas_available %}
+    <p class="notice">Language/region filtering requires rebuilding with --with-akas.</p>
+  {% elif language_filter_unavailable %}
+    <p class="notice">Language/region filtering requires rebuilding with --with-akas.</p>
+  {% endif %}
+
+  <section class="watchlist-list" aria-label="Watchlist titles">
+    {% for row in rows %}
+      <article class="watch-card">
+        <div class="watch-main">
+          {% if row.type == "tvEpisode" and row.series_title %}
+            <h2>{{ row.series_title }} &mdash; {{ episode_code(row.season_number, row.episode_number) }}{% if row.season_number is not none or row.episode_number is not none %}: {% endif %}{{ row.primary_title }}</h2>
+          {% else %}
+            <h2>{{ row.primary_title }}</h2>
+          {% endif %}
+          <p>{{ row.premiered or "Unknown year" }} &middot; {{ row.type }} &middot; {{ row.genres or "No genres" }}</p>
+          {% if row.type == "tvEpisode" %}
+            <p>Series: {{ row.series_title or "Unknown series" }} &middot; Season: {{ row.season_number or "" }} &middot; Episode: {{ row.episode_number or "" }}</p>
+          {% endif %}
+          <p>
+            {% if row.rating is not none %}
+              {{ "%.1f"|format(row.rating) }} rating &middot; {{ "{:,}".format(row.votes) }} votes
+            {% else %}
+              No rating
+            {% endif %}
+            {% if row.metascore is not none %}
+              &middot; Metascore {{ row.metascore }}
+            {% endif %}
+            {% if row.rotten_tomatoes_score is not none %}
+              &middot; Rotten Tomatoes {{ row.rotten_tomatoes_score }}%
+            {% endif %}
+            &middot; <a href="{{ imdb_url(row.title_id) }}" target="_blank" rel="noreferrer">IMDb</a>
+          </p>
+          <p class="added">Added {{ row.added_at }}</p>
+        </div>
+        <div class="watch-edit">
+          <form class="watch-update" method="post" action="{{ url_for('update_watchlist', title_id=row.title_id) }}">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <label>
+              Status
+              <select name="status">
+                {% for value, label in watch_statuses %}
+                  <option value="{{ value }}" {% if row.status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              Notes
+              <textarea name="notes" rows="3">{{ row.notes }}</textarea>
+            </label>
+            <button type="submit">Save</button>
+          </form>
+          <form method="post" action="{{ url_for('remove_from_watchlist', title_id=row.title_id) }}">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <button class="secondary danger" type="submit">Remove</button>
+          </form>
+        </div>
+      </article>
+    {% else %}
+      <p class="empty">No watchlist entries matched those filters.</p>
+    {% endfor %}
+  </section>
+
+  <nav class="pagination" aria-label="Watchlist pages">
+    {% if page > 1 %}
+      <a class="button secondary" href="{{ prev_url }}">Previous</a>
+    {% endif %}
+    <span>Page {{ page }}</span>
+    {% if has_next %}
+      <a class="button secondary" href="{{ next_url }}">Next</a>
+    {% endif %}
+  </nav>
+{% endblock %}

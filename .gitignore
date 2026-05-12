@@ -1,0 +1,87 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.python-version
+
+# Python build and packaging artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+pip-wheel-metadata/
+
+# Test, coverage, and type-check caches
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+virtualenv/
+
+# Flask and local runtime state
+instance/
+.webassets-cache/
+flask_session/
+*.log
+logs/
+
+# Local environment variables and API secrets
+.env
+.env.*
+!.env.example
+*.secret
+*.secrets
+secrets/
+
+# SQLite databases and transient files
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+
+# IMDb local datasets and generated imports
+downloads/
+imdb.db
+imdb.db-*
+*.tsv
+*.tsv.gz
+*.csv.tmp
+
+# OMDb/TMDb local fetch artifacts
+omdb_cache/
+tmdb_cache/
+poster_cache/
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# VS Code local workspace settings
+.vscode/
+*.code-workspace
+
+# Misc local files
+*.bak
+*.swp
+*.swo
+~$*

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Adult Content Lock{% endblock %}
+
+{% block content %}
+  <section class="setup-panel">
+    <h1>Adult content lock</h1>
+    {% if adult_unlocked %}
+      <p>Adult titles can be included for this browser session when the filter checkbox is selected.</p>
+      <form method="post" action="{{ url_for('lock_adult_content') }}">
+        <input type="hidden" name="next" value="{{ request.args.get('next') or url_for('index') }}">
+        <button type="submit">Lock adult titles</button>
+      </form>
+    {% else %}
+      <p>Adult titles are hidden by default from browsing, searches, watchlist filters, and default results.</p>
+      <form method="post" action="{{ url_for('unlock_adult_content') }}">
+        <input type="hidden" name="next" value="{{ request.args.get('next') or url_for('index') }}">
+        <button type="submit">Unlock include-adult filter</button>
+      </form>
+    {% endif %}
+  </section>
+{% endblock %}

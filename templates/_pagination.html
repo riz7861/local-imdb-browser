@@ -1,0 +1,16 @@
+<nav class="pagination" aria-label="Result pages">
+  <span class="result-count">
+    {% if total_count %}
+      Showing {{ "{:,}".format(result_start) }}-{{ "{:,}".format(result_end) }} of {{ "{:,}".format(total_count) }} results
+    {% else %}
+      Showing 0 results
+    {% endif %}
+  </span>
+  {% if page > 1 %}
+    <a class="button secondary" href="{{ prev_url }}">Previous</a>
+  {% endif %}
+  <span>Page {{ page }}</span>
+  {% if has_next %}
+    <a class="button secondary" href="{{ next_url }}">Next</a>
+  {% endif %}
+</nav>

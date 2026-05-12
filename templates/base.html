@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Local IMDb Browser{% endblock %}</title>
+    <script>
+      (function () {
+        try {
+          var theme = localStorage.getItem("imdb-theme") || "system";
+          var resolved = theme === "system" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : theme;
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.dataset.resolvedTheme = resolved === "dark" ? "dark" : "light";
+        } catch (error) {
+          document.documentElement.dataset.theme = "system";
+          document.documentElement.dataset.resolvedTheme = "light";
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="{{ url_for('index') }}">Local IMDb</a>
+      <nav aria-label="Primary">
+        <a href="{{ url_for('index') }}">Browse</a>
+        <a href="{{ url_for('watchlist') }}">Watchlist</a>
+        {% if current_user %}
+          <span class="nav-user">{{ current_user.username }}</span>
+          <form class="nav-form" method="post" action="{{ url_for('logout') }}">
+            <button class="link-button topbar-link" type="submit">Logout</button>
+          </form>
+        {% else %}
+          <a href="{{ url_for('login') }}">Login</a>
+        {% endif %}
+      </nav>
+    </header>
+
+    <main class="page">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <section class="flash-stack" aria-label="Notifications">
+            {% for category, message in messages %}
+              <p class="flash {{ category }}">{{ message }}</p>
+            {% endfor %}
+          </section>
+        {% endif %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

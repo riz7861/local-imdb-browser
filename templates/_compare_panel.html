@@ -1,0 +1,64 @@
+<section class="compare-panel" aria-label="Quality Score comparison">
+  <div class="compare-heading">
+    <div>
+      <h2>Compare selected</h2>
+      <p>{{ quality_profile_label(filters.quality_profile) }} · {{ quality_score_mode_label(filters.score_mode) }}</p>
+    </div>
+    <a class="button secondary compact-button" href="{{ clear_compare_url }}">Clear</a>
+  </div>
+  <div class="compare-grid" style="--compare-count: {{ compare_rows|length }}">
+    {% for row in compare_rows %}
+      <article class="compare-card">
+        <h3>{{ row.primary_title }}</h3>
+        <p class="metadata">
+          <span>{{ row.premiered or "Unknown year" }}</span>
+          <span>{{ title_type_label(row.type) }}</span>
+          <span>{{ row.genres or "No genres" }}</span>
+        </p>
+        <div class="compare-score">
+          <strong>{{ "%.1f"|format(row.quality_score) if row.quality_score is not none else "N/A" }}</strong>
+          <span>Quality Score</span>
+        </div>
+        <dl class="score-breakdown compare-breakdown">
+          <div>
+            <dt>Raw IMDb</dt>
+            <dd>{{ "%.1f"|format(row.raw_imdb_score) if row.raw_imdb_score is not none else "N/A" }}</dd>
+          </div>
+          <div>
+            <dt>IMDb adjusted</dt>
+            <dd>{{ "%.1f"|format(row.adjusted_imdb_score) if row.adjusted_imdb_score is not none else "N/A" }}</dd>
+          </div>
+          <div>
+            <dt>Vote confidence</dt>
+            <dd>{{ "%.1f"|format(row.vote_confidence_score) if row.vote_confidence_score is not none else "N/A" }}</dd>
+          </div>
+          <div>
+            <dt>Metascore used</dt>
+            <dd>{{ "%.1f"|format(row.metascore_used) if row.metascore_used is not none else "N/A" }}</dd>
+          </div>
+          <div>
+            <dt>RT used</dt>
+            <dd>{{ "%.1f"|format(row.rotten_tomatoes_score_used) if row.rotten_tomatoes_score_used is not none else "N/A" }}</dd>
+          </div>
+          <div>
+            <dt>Base weighted</dt>
+            <dd>{{ "%.3f"|format(row.quality_base_score) if row.quality_base_score is not none else "N/A" }}</dd>
+          </div>
+          <div>
+            <dt>Mode adjustment</dt>
+            <dd>{{ "%.3f"|format(row.quality_mode_adjustment) if row.quality_mode_adjustment is not none else "N/A" }}</dd>
+          </div>
+          <div>
+            <dt>Before rounding</dt>
+            <dd>{{ "%.3f"|format(row.quality_score_unrounded) if row.quality_score_unrounded is not none else "N/A" }}</dd>
+          </div>
+        </dl>
+        <p class="compare-note">
+          Difference drivers: source spread {{ "%.1f"|format(row.source_spread) if row.source_spread is not none else "N/A" }},
+          audience/critic gap {{ "%.1f"|format(row.audience_critic_gap) if row.audience_critic_gap is not none else "N/A" }}.
+          {{ row.quality_missing_summary }}.
+        </p>
+      </article>
+    {% endfor %}
+  </div>
+</section>
