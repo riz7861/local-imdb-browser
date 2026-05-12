@@ -58,6 +58,29 @@ python app.py
 
 Open http://127.0.0.1:5000
 
+## Railway Deployment
+
+This repository includes a `Procfile` for Railway:
+
+```text
+web: gunicorn app:app --bind 0.0.0.0:$PORT
+```
+
+Railway's Flask guide recommends Gunicorn for production serving, and Railway public networking expects the app to listen on `0.0.0.0:$PORT`.
+
+Deploy from GitHub:
+
+1. Push this repository to GitHub.
+2. In Railway, create a new project and choose `Deploy from GitHub repo`.
+3. Select `riz7861/local-imdb-browser` and deploy the app service.
+4. In the Railway service variables, set `SECRET_KEY` to a long random value. Optional fetcher variables such as `OMDB_API_KEY`, `TMDB_API_KEY`, and `IMDB_BROWSER_DB` can also be set there.
+5. Create or restore the production SQLite database separately. The repository does not include `imdb.db`; use a persistent Railway volume or another restore process, then point `IMDB_BROWSER_DB` at that database path if it is not the default app root path.
+6. Open the service logs to confirm Gunicorn started, then use Networking > Public Networking > Generate Domain to expose the app.
+
+Startup note: production data must exist before useful browsing. The app can start without `imdb.db` and show the setup-needed page, but Railway deployment does not build or restore the IMDb database automatically.
+
+Do not commit local databases, downloaded IMDb datasets, `.env` files, or secrets. `.gitignore` excludes `imdb.db`, `*.db`, `.env`, `downloads/`, and secret folders/files.
+
 ## Setup Notes
 
 `setup_imdb.py` installs the Python dependencies from `requirements.txt`, downloads the IMDb non-commercial datasets through `imdb-sqlite`, and builds:

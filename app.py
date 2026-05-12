@@ -5,6 +5,7 @@ import functools
 import io
 import logging
 import os
+import secrets
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -34,6 +35,7 @@ DEFAULT_PAGE_SIZE = 50
 SHOW_ALL_SAFE_LIMIT = 2000
 SLOW_QUERY_SECONDS = 0.5
 LOGGER = logging.getLogger(__name__)
+DEV_SECRET_KEY = secrets.token_urlsafe(32)
 
 DEFAULT_TITLE_TYPE_FILTERS = ["movie", "tvSeries", "tvMiniSeries", "tvMovie"]
 
@@ -420,7 +422,7 @@ def quality_select_sql(
 
 def create_app() -> Flask:
     app = Flask(__name__)
-    app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "local-imdb-browser")
+    app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", DEV_SECRET_KEY)
     app.config["DATABASE"] = Path(os.environ.get("IMDB_BROWSER_DB", DEFAULT_DB_PATH))
 
     @app.context_processor
@@ -1644,8 +1646,13 @@ def imdb_url(title_id: str) -> str:
     return f"https://www.imdb.com/title/{title_id}/"
 
 
+def env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 app = create_app()
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", "5000"))
+    app.run(host=os.environ.get("HOST", "127.0.0.1"), port=port, debug=env_flag("FLASK_DEBUG"))
