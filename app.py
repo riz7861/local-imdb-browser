@@ -43,6 +43,9 @@ SLOW_QUERY_SECONDS = 0.5
 LOGGER = logging.getLogger(__name__)
 DEV_SECRET_KEY = secrets.token_urlsafe(32)
 APP_IDENTIFIER = "local-imdb-browser"
+LOGIN_MAX_FAILURES = 5
+LOGIN_LOCKOUT_SECONDS = 60
+CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 DEFAULT_TITLE_TYPE_FILTERS = ["movie", "tvSeries", "tvMiniSeries", "tvMovie"]
 
@@ -433,6 +436,9 @@ def create_app() -> Flask:
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", DEV_SECRET_KEY)
     app.config["DATABASE"] = configured_database_path()
     app.config["DATABASE_BOOTSTRAP_ERROR"] = ""
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_SECURE"] = secure_session_cookie_enabled()
 
     try:
         bootstrap_database_from_download_url(app.config["DATABASE"], logger=app.logger)
@@ -458,6 +464,13 @@ def create_app() -> Flask:
         db = g.pop("db", None)
         if db is not None:
             db.close()
+
+    @app.after_request
+    def add_security_headers(response: Response) -> Response:
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        return response
 
     @app.get("/health")
     def health() -> tuple[Response, int]:
@@ -570,6 +583,9 @@ def create_app() -> Flask:
             return render_template("setup_needed.html", reason=reason)
         ensure_watchlist_schema()
         if request.method == "POST":
+            if login_rate_limited():
+                flash("Too many login attempts. Try again shortly.", "error")
+                return render_template("login.html"), 429
             username = (request.form.get("username") or "").strip()
             password = request.form.get("password") or ""
             user = get_db().execute(
@@ -581,6 +597,7 @@ def create_app() -> Flask:
                 session["user_id"] = user["id"]
                 flash("Logged in.", "success")
                 return redirect(safe_next_url())
+            record_login_failure()
             flash("Invalid username or password.", "error")
         return render_template("login.html")
 
@@ -822,6 +839,23 @@ def login_required(view: Any) -> Any:
         return view(*args, **kwargs)
 
     return wrapped
+
+
+def login_rate_limited() -> bool:
+    locked_until = float(session.get("login_locked_until") or 0)
+    if locked_until <= time.time():
+        if locked_until:
+            session.pop("login_locked_until", None)
+            session.pop("login_failures", None)
+        return False
+    return True
+
+
+def record_login_failure() -> None:
+    failures = int(session.get("login_failures") or 0) + 1
+    session["login_failures"] = failures
+    if failures >= LOGIN_MAX_FAILURES:
+        session["login_locked_until"] = time.time() + LOGIN_LOCKOUT_SECONDS
 
 
 def current_user_id() -> int | None:
@@ -1520,28 +1554,43 @@ def render_watchlist_csv(rows: list[sqlite3.Row]) -> str:
     )
     for row in rows:
         writer.writerow(
-            [
-                row["title_id"],
-                row["primary_title"],
-                row["series_title"],
-                row["season_number"],
-                row["episode_number"],
-                row["premiered"],
-                row["type"],
-                row["genres"],
-                row["rating"],
-                row["votes"],
-                row["metascore"],
-                row["rotten_tomatoes_score"],
-                row["omdb_imdb_rating"],
-                row["quality_score"],
-                row["status"],
-                row["notes"],
-                row["added_at"],
-                imdb_url(row["title_id"]),
-            ]
+            csv_safe_row(
+                [
+                    row["title_id"],
+                    row["primary_title"],
+                    row["series_title"],
+                    row["season_number"],
+                    row["episode_number"],
+                    row["premiered"],
+                    row["type"],
+                    row["genres"],
+                    row["rating"],
+                    row["votes"],
+                    row["metascore"],
+                    row["rotten_tomatoes_score"],
+                    row["omdb_imdb_rating"],
+                    row["quality_score"],
+                    row["status"],
+                    row["notes"],
+                    row["added_at"],
+                    imdb_url(row["title_id"]),
+                ]
+            )
         )
     return output.getvalue()
+
+
+def csv_safe_row(values: list[Any]) -> list[Any]:
+    return [csv_safe_cell(value) for value in values]
+
+
+def csv_safe_cell(value: Any) -> Any:
+    if value is None:
+        return value
+    text = str(value)
+    if text.startswith(CSV_FORMULA_PREFIXES):
+        return "'" + text
+    return value
 
 
 def render_titles_csv(rows: list[sqlite3.Row], filters: dict[str, Any]) -> str:
@@ -1577,32 +1626,34 @@ def render_titles_csv(rows: list[sqlite3.Row], filters: dict[str, Any]) -> str:
     )
     for row in rows:
         writer.writerow(
-            [
-                row["title_id"],
-                row["primary_title"],
-                row["series_title"],
-                row["season_number"],
-                row["episode_number"],
-                row["premiered"],
-                row["type"],
-                row["genres"],
-                row["rating"],
-                row["votes"],
-                row["metascore"],
-                row["rotten_tomatoes_score"],
-                row["omdb_imdb_rating"],
-                filters.get("quality_profile"),
-                filters.get("score_mode"),
-                row["quality_score"],
-                row["raw_imdb_score"],
-                row["adjusted_imdb_score"],
-                row["vote_confidence_score"],
-                row["metascore_used"],
-                row["rotten_tomatoes_score_used"],
-                row["quality_missing_summary"],
-                row["watch_status"],
-                imdb_url(row["title_id"]),
-            ]
+            csv_safe_row(
+                [
+                    row["title_id"],
+                    row["primary_title"],
+                    row["series_title"],
+                    row["season_number"],
+                    row["episode_number"],
+                    row["premiered"],
+                    row["type"],
+                    row["genres"],
+                    row["rating"],
+                    row["votes"],
+                    row["metascore"],
+                    row["rotten_tomatoes_score"],
+                    row["omdb_imdb_rating"],
+                    filters.get("quality_profile"),
+                    filters.get("score_mode"),
+                    row["quality_score"],
+                    row["raw_imdb_score"],
+                    row["adjusted_imdb_score"],
+                    row["vote_confidence_score"],
+                    row["metascore_used"],
+                    row["rotten_tomatoes_score_used"],
+                    row["quality_missing_summary"],
+                    row["watch_status"],
+                    imdb_url(row["title_id"]),
+                ]
+            )
         )
     return output.getvalue()
 
@@ -1761,6 +1812,13 @@ def imdb_url(title_id: str) -> str:
 
 def env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def secure_session_cookie_enabled() -> bool:
+    explicit = os.environ.get("SESSION_COOKIE_SECURE")
+    if explicit is not None:
+        return env_flag("SESSION_COOKIE_SECURE")
+    return bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_SERVICE_ID"))
 
 
 app = create_app()

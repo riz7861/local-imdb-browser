@@ -113,6 +113,34 @@ def test_health_response_hides_internal_details(monkeypatch, tmp_path: Path):
     assert "Traceback" not in body
 
 
+def test_security_headers_are_added(client):
+    response = client.get("/")
+
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["X-Frame-Options"] == "DENY"
+
+
+def test_session_cookie_defaults_are_hardened(monkeypatch):
+    monkeypatch.delenv("SESSION_COOKIE_SECURE", raising=False)
+    monkeypatch.delenv("RAILWAY_ENVIRONMENT", raising=False)
+    monkeypatch.delenv("RAILWAY_SERVICE_ID", raising=False)
+
+    app = create_app()
+
+    assert app.config["SESSION_COOKIE_HTTPONLY"] is True
+    assert app.config["SESSION_COOKIE_SAMESITE"] == "Lax"
+    assert app.config["SESSION_COOKIE_SECURE"] is False
+
+
+def test_session_cookie_secure_can_be_enabled(monkeypatch):
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "1")
+
+    app = create_app()
+
+    assert app.config["SESSION_COOKIE_SECURE"] is True
+
+
 def test_app_database_path_uses_database_path_env(monkeypatch, tmp_path: Path):
     db_path = tmp_path / "imdb.db"
     monkeypatch.setenv("DATABASE_PATH", str(db_path))
@@ -824,6 +852,83 @@ def test_titles_csv_export_uses_filters_and_sort(client):
     assert rows[0]["score_mode"] == "profile"
 
 
+def test_titles_csv_export_escapes_formula_cells(tmp_path: Path):
+    db_path = tmp_path / "titles-csv-formula.db"
+    build_test_db(db_path, with_akas=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO titles (
+                title_id, type, primary_title, original_title, is_adult,
+                premiered, ended, runtime_minutes, genres
+            )
+            VALUES ('ttcsv0001', 'movie', '=SUM(1,1)', '=SUM(1,1)', 0, 2024, NULL, 90, '@Drama')
+            """
+        )
+        conn.execute(
+            "INSERT INTO ratings (title_id, rating, votes) VALUES ('ttcsv0001', 7.0, 2000)"
+        )
+        conn.commit()
+
+    with make_client_for_db(db_path) as client:
+        response = client.get("/titles.csv?q=SUM&title_types=movie")
+
+    rows = list(csv.DictReader(io.StringIO(response.get_data(as_text=True))))
+    row = next(row for row in rows if row["title_id"] == "ttcsv0001")
+
+    assert response.status_code == 200
+    assert row["title"] == "'=SUM(1,1)"
+    assert row["genres"] == "'@Drama"
+
+
+def test_watchlist_csv_export_escapes_formula_cells(tmp_path: Path):
+    db_path = tmp_path / "watchlist-csv-formula.db"
+    build_test_db(db_path, with_akas=True)
+    create_user(db_path, "admin", "secret", user_id=1)
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO titles (
+                title_id, type, primary_title, original_title, is_adult,
+                premiered, ended, runtime_minutes, genres
+            )
+            VALUES (?, 'movie', ?, ?, 0, 2024, NULL, 90, ?)
+            """,
+            [
+                ("ttcsv0002", "+Watch Formula", "+Watch Formula", "-Drama"),
+                ("ttcsv0003", "\rCarriage Formula", "\rCarriage Formula", "Drama"),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO ratings (title_id, rating, votes) VALUES (?, 7.0, 2000)",
+            [("ttcsv0002",), ("ttcsv0003",)],
+        )
+        conn.executemany(
+            """
+            INSERT INTO watchlist (title_id, status, notes, added_at)
+            VALUES (?, 'plan_to_watch', ?, '2026-05-12T12:00:00+00:00')
+            """,
+            [
+                ("ttcsv0002", "\tTabbed note"),
+                ("ttcsv0003", "Plain note"),
+            ],
+        )
+        conn.commit()
+
+    with make_client_for_db(db_path) as client:
+        login(client)
+        response = client.get("/watchlist.csv")
+
+    rows = list(csv.DictReader(io.StringIO(response.get_data(as_text=True))))
+    by_id = {row["title_id"]: row for row in rows}
+
+    assert response.status_code == 200
+    assert by_id["ttcsv0002"]["title"] == "'+Watch Formula"
+    assert by_id["ttcsv0002"]["genres"] == "'-Drama"
+    assert by_id["ttcsv0002"]["notes"] == "'\tTabbed note"
+    assert by_id["ttcsv0003"]["title"] == "'\rCarriage Formula"
+
+
 def test_invalid_sort_by_falls_back_safely(client):
     response = client.get("/?q=Sort&title_types=movie&sort_by=not_a_column&sort_dir=asc")
     html = response.get_data(as_text=True)
@@ -1153,6 +1258,24 @@ def test_login_and_logout(tmp_path: Path):
         logged_out = client.post("/logout", follow_redirects=True)
         assert b"Logged out." in logged_out.data
         assert b"Login" in logged_out.data
+
+
+def test_login_rate_limits_repeated_failures(tmp_path: Path):
+    db_path = tmp_path / "auth-rate-limit.db"
+    build_test_db(db_path, with_akas=True)
+    create_user(db_path, "admin", "secret", user_id=1)
+
+    with make_client_for_db(db_path) as client:
+        for _index in range(5):
+            response = login(client, password="wrong")
+            assert response.status_code == 200
+            assert b"Invalid username or password." in response.data
+
+        limited = login(client)
+
+    assert limited.status_code == 429
+    assert b"Too many login attempts. Try again shortly." in limited.data
+    assert b"secret" not in limited.data
 
 
 def test_watchlist_page_requires_login(client):
