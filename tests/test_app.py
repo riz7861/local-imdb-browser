@@ -61,6 +61,58 @@ def make_client_for_db(db_path: Path):
     return app.test_client()
 
 
+def test_health_ready_database_returns_200(client):
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.content_type.startswith("application/json")
+    assert response.get_json() == {
+        "app": "local-imdb-browser",
+        "database": "ready",
+        "status": "ok",
+    }
+
+
+def test_health_missing_database_returns_503(tmp_path: Path):
+    missing_db = tmp_path / "missing" / "imdb.db"
+    app = create_app()
+    app.config.update(
+        DATABASE=missing_db,
+        SECRET_KEY="test-secret",
+        TESTING=True,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/health")
+
+    assert response.status_code == 503
+    assert response.content_type.startswith("application/json")
+    assert response.get_json() == {
+        "app": "local-imdb-browser",
+        "database": "missing",
+        "status": "error",
+    }
+
+
+def test_health_response_hides_internal_details(monkeypatch, tmp_path: Path):
+    missing_db = tmp_path / "data" / "imdb.db"
+    monkeypatch.setenv("DATABASE_PATH", "/data/imdb.db")
+    app = create_app()
+    app.config.update(
+        DATABASE=missing_db,
+        SECRET_KEY="test-secret",
+        TESTING=True,
+    )
+
+    with app.test_client() as client:
+        body = client.get("/health").get_data(as_text=True)
+
+    assert "/data/imdb.db" not in body
+    assert "DATABASE_PATH" not in body
+    assert str(missing_db) not in body
+    assert "Traceback" not in body
+
+
 def test_app_database_path_uses_database_path_env(monkeypatch, tmp_path: Path):
     db_path = tmp_path / "imdb.db"
     monkeypatch.setenv("DATABASE_PATH", str(db_path))
@@ -78,6 +130,23 @@ def test_app_database_path_defaults_to_local_db(monkeypatch):
     app = create_app()
 
     assert app.config["DATABASE"] == DEFAULT_DB_PATH.resolve()
+
+
+def test_setup_page_hides_internal_database_path(monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", "/data/imdb.db")
+    monkeypatch.delenv("IMDB_BROWSER_DB", raising=False)
+
+    app = create_app()
+    with app.test_client() as client:
+        html = client.get("/").get_data(as_text=True)
+
+    assert "Database setup needed" in html
+    assert "Please check the service configuration or contact the app administrator." in html
+    assert "/data/imdb.db" not in html
+    assert "DATABASE_PATH" not in html
+    assert "python setup_imdb.py" not in html
+    assert "python app.py" not in html
+    assert "imdb.db" not in html
 
 
 def test_database_bootstrap_downloads_missing_database(monkeypatch, tmp_path: Path):
@@ -186,7 +255,10 @@ def test_database_bootstrap_failure_is_readable(monkeypatch, tmp_path: Path):
     with app.test_client() as client:
         html = client.get("/").get_data(as_text=True)
 
-    assert "Could not download database from DATABASE_DOWNLOAD_URL" in html
+    assert "The title database could not be prepared." in html
+    assert "DATABASE_DOWNLOAD_URL" not in html
+    assert str(db_path) not in html
+    assert "network unavailable" not in html
 
 
 def create_user(db_path: Path, username: str, password: str, user_id: int | None = None) -> None:
@@ -520,6 +592,23 @@ def test_home_page_loads(client):
 
     assert response.status_code == 200
     assert b"Browse IMDb" in response.data
+
+
+def test_rendered_pages_hide_database_path(tmp_path: Path):
+    db_path = tmp_path / "internal" / "imdb.db"
+    db_path.parent.mkdir()
+    build_test_db(db_path, with_akas=True)
+    create_user(db_path, "admin", "secret", user_id=1)
+
+    with make_client_for_db(db_path) as client:
+        home_html = client.get("/").get_data(as_text=True)
+        login(client)
+        watchlist_html = client.get("/watchlist").get_data(as_text=True)
+
+    assert str(db_path) not in home_html
+    assert str(db_path) not in watchlist_html
+    assert "Search and filter your IMDb library" in home_html
+    assert "Your saved titles" in watchlist_html
 
 
 def test_adult_titles_excluded_by_default(client):
@@ -1167,7 +1256,8 @@ def test_language_filter_disabled_without_akas(client_without_akas):
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "Language/region filtering requires rebuilding with --with-akas." in html
+    assert "Language/region filtering is not available for this database." in html
+    assert "--with-akas" not in html
     assert 'name="language_category" disabled' in html
 
 

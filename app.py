@@ -18,6 +18,7 @@ from flask import (
     Response,
     flash,
     g,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -41,6 +42,7 @@ SHOW_ALL_SAFE_LIMIT = 2000
 SLOW_QUERY_SECONDS = 0.5
 LOGGER = logging.getLogger(__name__)
 DEV_SECRET_KEY = secrets.token_urlsafe(32)
+APP_IDENTIFIER = "local-imdb-browser"
 
 DEFAULT_TITLE_TYPE_FILTERS = ["movie", "tvSeries", "tvMiniSeries", "tvMovie"]
 
@@ -440,7 +442,6 @@ def create_app() -> Flask:
     @app.context_processor
     def inject_globals() -> dict[str, Any]:
         return {
-            "db_path": app.config["DATABASE"],
             "genres": GENRES,
             "title_type_options": TITLE_TYPE_OPTIONS,
             "watch_statuses": WATCH_STATUSES,
@@ -457,6 +458,25 @@ def create_app() -> Flask:
         db = g.pop("db", None)
         if db is not None:
             db.close()
+
+    @app.get("/health")
+    def health() -> tuple[Response, int]:
+        ready, _reason = database_ready()
+        if ready:
+            return jsonify(
+                {
+                    "app": APP_IDENTIFIER,
+                    "database": "ready",
+                    "status": "ok",
+                }
+            ), 200
+        return jsonify(
+            {
+                "app": APP_IDENTIFIER,
+                "database": "missing",
+                "status": "error",
+            }
+        ), 503
 
     @app.route("/")
     def index() -> str:
@@ -574,7 +594,7 @@ def create_app() -> Flask:
     @login_required
     def add_to_watchlist(title_id: str) -> Response:
         if not database_ready()[0]:
-            flash("Build imdb.db before using the watchlist.", "error")
+            flash("The title database is not ready yet.", "error")
             return redirect(url_for("index"))
 
         ensure_watchlist_schema()
@@ -608,7 +628,7 @@ def create_app() -> Flask:
     @login_required
     def update_watchlist(title_id: str) -> Response:
         if not database_ready()[0]:
-            flash("Build imdb.db before using the watchlist.", "error")
+            flash("The title database is not ready yet.", "error")
             return redirect(url_for("index"))
 
         ensure_watchlist_schema()
@@ -630,7 +650,7 @@ def create_app() -> Flask:
     @login_required
     def remove_from_watchlist(title_id: str) -> Response:
         if not database_ready()[0]:
-            flash("Build imdb.db before using the watchlist.", "error")
+            flash("The title database is not ready yet.", "error")
             return redirect(url_for("index"))
 
         ensure_watchlist_schema()
@@ -764,8 +784,8 @@ def database_ready() -> tuple[bool, str]:
     if not path.exists():
         bootstrap_error = current_app_config("DATABASE_BOOTSTRAP_ERROR")
         if bootstrap_error:
-            return False, bootstrap_error
-        return False, f"Database not found at {path}"
+            return False, "The title database could not be prepared."
+        return False, "The title database is not ready yet."
 
     try:
         db = get_db()
@@ -773,10 +793,11 @@ def database_ready() -> tuple[bool, str]:
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'titles'"
         ).fetchone()
     except sqlite3.DatabaseError as exc:
-        return False, f"Could not read {path}: {exc}"
+        LOGGER.warning("Could not read database at %s: %s", path, exc)
+        return False, "The title database could not be opened."
 
     if not found:
-        return False, f"{path} exists, but it does not contain the IMDb titles table"
+        return False, "The database is missing required title data."
     return True, ""
 
 

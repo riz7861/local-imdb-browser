@@ -1,5 +1,7 @@
 # Local IMDb Browser
 
+[![CI](https://github.com/riz7861/local-imdb-browser/actions/workflows/ci.yml/badge.svg)](https://github.com/riz7861/local-imdb-browser/actions/workflows/ci.yml)
+
 A local Flask browser for IMDb non-commercial datasets. It uses `imdb-sqlite` to build `imdb.db` with only the `titles`, `ratings`, and `episodes` tables, then stores local users, per-user watchlists, external ratings, and optional poster URLs in that same SQLite file.
 
 Everything runs on your machine. Public search browsing is open, but saving and managing watchlist items requires a local username/password login. There is no hosted service or remote database.

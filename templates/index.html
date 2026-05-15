@@ -6,7 +6,7 @@
   <section class="browser-toolbar">
     <div>
       <h1>Browse IMDb</h1>
-      <p>{{ db_path }}</p>
+      <p>Search and filter your IMDb library</p>
     </div>
     <div class="toolbar-actions">
       <label class="theme-control">
@@ -22,9 +22,9 @@
   </section>
 
   {% if not akas_available %}
-    <p class="notice">Language/region filtering requires rebuilding with --with-akas.</p>
+    <p class="notice">Language/region filtering is not available for this database.</p>
   {% elif language_filter_unavailable %}
-    <p class="notice">Language/region filtering requires rebuilding with --with-akas.</p>
+    <p class="notice">Language/region filtering is not available for this database.</p>
   {% endif %}
 
   <section class="browser-shell view-{{ view }} {% if not view_explicit %}view-default{% endif %}">
@@ -72,7 +72,7 @@
             {% endfor %}
           </select>
           {% if not akas_available %}
-            <span class="field-note">Language/region filtering requires rebuilding with --with-akas.</span>
+            <span class="field-note">Not available for this database</span>
           {% else %}
             <span class="field-note">Region/language based</span>
           {% endif %}

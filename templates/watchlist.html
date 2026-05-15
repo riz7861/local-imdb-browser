@@ -6,7 +6,7 @@
   <section class="page-heading">
     <div>
       <h1>Watchlist</h1>
-      <p>Stored locally in {{ db_path }}</p>
+      <p>Your saved titles</p>
     </div>
     <a class="button" href="{{ export_url }}">Export CSV</a>
   </section>
@@ -52,7 +52,7 @@
         {% endfor %}
       </select>
       {% if not akas_available %}
-        <span class="field-note">Requires --with-akas</span>
+        <span class="field-note">Not available for this database</span>
       {% else %}
         <span class="field-note">Region/language based</span>
       {% endif %}
@@ -91,9 +91,9 @@
   </form>
 
   {% if not akas_available %}
-    <p class="notice">Language/region filtering requires rebuilding with --with-akas.</p>
+    <p class="notice">Language/region filtering is not available for this database.</p>
   {% elif language_filter_unavailable %}
-    <p class="notice">Language/region filtering requires rebuilding with --with-akas.</p>
+    <p class="notice">Language/region filtering is not available for this database.</p>
   {% endif %}
 
   <section class="watchlist-list" aria-label="Watchlist titles">
